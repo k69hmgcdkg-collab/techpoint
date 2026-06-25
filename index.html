@@ -4157,12 +4157,16 @@ function resetCookieConsent() {
 }
 function showPrivacyPage() {
   const text = gdprSettings.privacyText || document.getElementById('gdpr-full-text')?.value || 'Text zásad nebyl vyplněn v nastavení GDPR.';
-  // Simple modal
+  // Remove any existing modal first
+  const existing = document.getElementById('privacy-modal');
+  if (existing) existing.remove();
   const modal = document.createElement('div');
+  modal.id = 'privacy-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
   modal.innerHTML = `<div style="background:var(--surface);max-width:680px;width:100%;max-height:80vh;overflow-y:auto;border:1px solid var(--border);padding:32px;position:relative">
-    <button onclick="this.closest('div[style]').remove()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button>
-    <h2 style="font-family:var(--font-serif);font-size:22px;font-weight:700;margin-bottom:16px">Zásady ochrany soukromí</h2>
+    <button onclick="document.getElementById('privacy-modal').remove()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button>
+    <h2 style="font-family:var(--font-serif);font-size:22px;font-weight:700;margin-bottom:16px">Zásady ochrany soukromí a cookies</h2>
     <div style="font-size:14px;color:var(--text2);line-height:1.8;white-space:pre-wrap">${text}</div>
   </div>`;
   document.body.appendChild(modal);
@@ -4254,14 +4258,79 @@ function uploadFavicon(input) {
   const reader = new FileReader();
   reader.onload = e => {
     const src = e.target.result;
-    // Update favicon in <head>
-    let link = document.querySelector("link[rel~='icon']");
-    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-    link.href = src;
-    // Preview
+
+    // Helper — resize image to given size and return data URL
+    function resizeIcon(size) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, size, size);
+        const resized = canvas.toDataURL('image/png');
+
+        // Apply all relevant link/meta tags for this size
+        if (size === 32) {
+          setIconLink('icon', '32x32', resized);
+          setIconLink('shortcut icon', '32x32', resized);
+        }
+        if (size === 16) setIconLink('icon', '16x16', resized);
+        if (size === 180) setIconLink('apple-touch-icon', '180x180', resized);
+        if (size === 192) setIconLink('icon', '192x192', resized, 'manifest');
+        if (size === 512) setIconLink('icon', '512x512', resized);
+      };
+      img.src = src;
+    }
+
+    function setIconLink(rel, sizes, href, extra) {
+      // Remove existing
+      document.querySelectorAll(`link[rel="${rel}"][sizes="${sizes}"]`).forEach(el => el.remove());
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.sizes = sizes;
+      link.type = 'image/png';
+      link.href = href;
+      if (extra === 'manifest') link.setAttribute('data-manifest', 'true');
+      document.head.appendChild(link);
+    }
+
+    // Also set theme-color meta for mobile browser chrome
+    let themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (!themeMeta) {
+      themeMeta = document.createElement('meta');
+      themeMeta.name = 'theme-color';
+      document.head.appendChild(themeMeta);
+    }
+    themeMeta.content = '#fafaf8';
+
+    // Set MS tile meta for Windows
+    let msMeta = document.querySelector('meta[name="msapplication-TileImage"]');
+    if (!msMeta) {
+      msMeta = document.createElement('meta');
+      msMeta.name = 'msapplication-TileImage';
+      document.head.appendChild(msMeta);
+    }
+    msMeta.content = src;
+
+    let msColor = document.querySelector('meta[name="msapplication-TileColor"]');
+    if (!msColor) {
+      msColor = document.createElement('meta');
+      msColor.name = 'msapplication-TileColor';
+      document.head.appendChild(msColor);
+    }
+    msColor.content = '#c8102e';
+
+    // Generate all sizes
+    [16, 32, 180, 192, 512].forEach(resizeIcon);
+
+    // OG image fallback
+    setMeta('property', 'og:image', src);
+
+    // Preview in settings
     const prev = document.getElementById('favicon-preview');
     if (prev) prev.innerHTML = `<img src="${src}" style="width:32px;height:32px;object-fit:contain">`;
-    showToast('Ikona webu nahrána', 'success');
+
+    showToast('Ikona nahrána — favicon, iOS, Android, Windows', 'success');
   };
   reader.readAsDataURL(file);
 }
